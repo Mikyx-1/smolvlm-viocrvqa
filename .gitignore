@@ -1,0 +1,23 @@
+# datasets, artifacts and run logs live outside version control
+# (anchored to the repo root so src/viocrvqa/data/ is still tracked)
+/data/
+/checkpoints/
+/results/
+/wandb/
+/scratch/
+*.log
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# editors / tooling
+.claude/
+.idea/
+.vscode/
+.ipynb_checkpoints/

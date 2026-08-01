@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "viocrvqa"
+version = "0.1.0"
+description = "Fine-tune and evaluate SmolVLM on the ViOCRVQA dataset"
+requires-python = ">=3.10"
+dependencies = [
+    "torch",
+    "transformers",
+    "pillow",
+    "requests",
+    "huggingface-hub",
+    "wandb",
+]
+
+[project.scripts]
+viocrvqa-train = "viocrvqa.cli.train:main"
+viocrvqa-eval = "viocrvqa.cli.eval_baseline:main"
+viocrvqa-sample = "viocrvqa.cli.sample:main"
+viocrvqa-infer = "viocrvqa.cli.infer:main"
+viocrvqa-merge-reports = "viocrvqa.cli.merge_reports:main"
+viocrvqa-download-data = "viocrvqa.cli.download_data:main"
+viocrvqa-split-data = "viocrvqa.cli.split_data:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
