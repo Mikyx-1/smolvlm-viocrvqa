@@ -77,10 +77,19 @@ class ModelBundle:
         return cls(model, processor, device)
 
     @classmethod
-    def for_training(cls, model_id=DEFAULT_MODEL, device="cuda:0", image_splitting=True,
-                     gradient_checkpointing=True):
-        """Load right-padded (so labels line up) and in train mode."""
-        return cls.load(model_id, device=device, dtype="bfloat16", padding_side="right",
+    def for_training(cls, model_id=DEFAULT_MODEL, device="cuda:0", dtype="float32",
+                     image_splitting=True, gradient_checkpointing=True):
+        """Load right-padded (so labels line up), in fp32, and in train mode.
+
+        The master weights must be fp32. AdamW's per-parameter step is ~lr
+        regardless of gradient scale, and at lr=1e-5 that is well below the
+        bf16 resolution at typical weight magnitudes (median |w| = 0.037,
+        where one bf16 step is 2.4e-4), so `w + update` rounds straight back
+        to `w` for 92% of the model and training silently stalls. Trainer
+        wraps the forward pass in bf16 autocast, so the speed and activation
+        memory of bf16 are kept -- only the accumulation is fp32.
+        """
+        return cls.load(model_id, device=device, dtype=dtype, padding_side="right",
                         image_splitting=image_splitting,
                         gradient_checkpointing=gradient_checkpointing, training=True)
 
