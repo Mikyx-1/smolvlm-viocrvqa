@@ -6,9 +6,10 @@ from torch.utils.data import Dataset
 class VQADataset(Dataset):
     """(image, question, answer) triples, decoded lazily from disk."""
 
-    def __init__(self, samples, corpus):
+    def __init__(self, samples, corpus, blank_image=False):
         self.samples = samples
         self.corpus = corpus
+        self.blank_image = blank_image  # grey images; the control for scoring
 
     def __len__(self):
         """Number of samples in the split."""
@@ -18,7 +19,7 @@ class VQADataset(Dataset):
         """Decode one sample's image and pair it with its question/answer."""
         s = self.samples[idx]
         return {
-            "image": self.corpus.open_image(s),
+            "image": self.corpus.open_image(s, blank=self.blank_image),
             "question": s["question"],
             "answer": s["gold"],
         }

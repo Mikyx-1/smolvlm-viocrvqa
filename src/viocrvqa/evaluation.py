@@ -1,12 +1,15 @@
 """Predicting a split and scoring every prediction."""
 
+import contextlib
 import time
 from dataclasses import dataclass
 
 import torch
+from torch.utils.data import DataLoader
 
 from . import metrics as M
 from .config import DEFAULT_MAX_NEW_TOKENS
+from .data.dataset import VQACollator, VQADataset
 from .generation import BatchGenerator
 
 
@@ -84,6 +87,91 @@ class Evaluator:
         }
 
 
+class LossEvaluator:
+    """Teacher-forced loss over a split, measured the way training measures it.
+
+    The generation metrics say whether the model *emits* the gold answer;
+    this says how much probability it puts on it. Reading them together is
+    what makes either one trustworthy -- a near-zero loss beside a poor exact
+    match means the eval path has drifted from the training path, not that
+    the model failed to learn.
+
+    Same collator and the same bf16 autocast as Trainer, so the number is
+    directly comparable to the loss printed during training.
+    """
+
+    def __init__(self, bundle, corpus, formatter, batch_size=2, amp=True,
+                 blank_image=False):
+        self.bundle = bundle
+        self.corpus = corpus
+        self.formatter = formatter
+        self.batch_size = batch_size
+        self.amp = amp
+        self.blank_image = blank_image
+
+    def autocast(self):
+        """bf16 compute, matching Trainer, so the loss is on the same scale."""
+        if not self.amp or not str(self.bundle.device).startswith("cuda"):
+            return contextlib.nullcontext()
+        return torch.autocast("cuda", dtype=torch.bfloat16)
+
+    @torch.no_grad()
+    def evaluate(self, samples, on_batch=None):
+        """Return loss, perplexity and argmax accuracy over the answer tokens."""
+        loader = DataLoader(
+            VQADataset(samples, self.corpus, blank_image=self.blank_image),
+            batch_size=self.batch_size,
+            shuffle=False,
+            collate_fn=VQACollator(self.formatter, self.bundle.device),
+        )
+        total = dict(nll=0.0, tokens=0, correct=0, answers=0, exact=0)
+        with self.bundle.teacher_forcing_mode():
+            for batch in loader:
+                self._accumulate(batch, total)
+                if on_batch:
+                    on_batch(total, len(samples))
+        return self._summarise(total, len(samples))
+
+    def _accumulate(self, batch, total):
+        """Add one batch's answer-token statistics into `total`."""
+        with self.autocast():
+            logits = self.bundle.model(**batch).logits
+        # standard causal shift: position t predicts token t+1
+        logits, labels = logits[:, :-1], batch["labels"][:, 1:]
+        mask = labels != -100
+
+        # gather answer positions before upcasting -- the full logit tensor is
+        # [batch, seq, 49k] and seq is dominated by image tokens
+        answer_logits = logits[mask].float()
+        answer_labels = labels[mask]
+        total["nll"] += torch.nn.functional.cross_entropy(
+            answer_logits, answer_labels, reduction="sum").item()
+        total["tokens"] += int(mask.sum())
+
+        correct = answer_logits.argmax(-1) == answer_labels
+        total["correct"] += int(correct.sum())
+        # split back per sample to ask whether a whole answer would survive
+        for row in correct.split(mask.sum(dim=1).tolist()):
+            if len(row):
+                total["answers"] += 1
+                total["exact"] += int(bool(row.all()))
+
+    @staticmethod
+    def _summarise(total, n_samples):
+        """Turn the running sums into the reported scalars."""
+        tokens = max(total["tokens"], 1)
+        answers = max(total["answers"], 1)
+        loss = total["nll"] / tokens
+        return {
+            "n": n_samples,
+            "answer_tokens": total["tokens"],
+            "loss": loss,
+            "perplexity": float(torch.exp(torch.tensor(loss))),
+            "token_accuracy": 100 * total["correct"] / tokens,
+            "answer_accuracy": 100 * total["exact"] / answers,
+        }
+
+
 class ProgressPrinter:
     """An on_batch callback printing throughput and running accuracy."""
 
@@ -103,3 +191,18 @@ class ProgressPrinter:
         """Clear the inline progress line once the pass is over."""
         if self.inline:
             print(" " * 60, end="\r")
+
+
+class LossProgressPrinter:
+    """An on_batch callback for LossEvaluator's running totals."""
+
+    def __init__(self):
+        self.t0 = time.time()
+
+    def __call__(self, total, n_samples):
+        """Print the running loss over the answer tokens seen so far."""
+        tokens = max(total["tokens"], 1)
+        done = total["answers"]
+        rate = done / max(time.time() - self.t0, 1e-9)
+        print(f"  {done}/{n_samples}  {rate:.1f} sample/s  "
+              f"loss={total['nll'] / tokens:.4f}", flush=True)
