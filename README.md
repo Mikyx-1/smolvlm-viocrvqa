@@ -89,6 +89,13 @@ Report(evaluator.evaluate(corpus.load("dev", limit=200))).print()
   pads on the left and needs KV caching. `ModelBundle.generation_mode()` flips
   between the two and restores the previous state afterwards, so the same
   `Evaluator` can be used mid-training.
+- Precision matters at both ends. At `lr=1e-5` the per-weight update, and the
+  total learned delta, are the same order as one bf16 step at typical weight
+  magnitudes. So training keeps fp32 master weights (bf16 rounds ~92% of the
+  updates away and the run silently stalls), and `--dtype auto` loads a
+  checkpoint in whatever dtype it was saved in (casting a fp32 fine-tune to
+  bf16 erases the delta for 41% of the model). Only the compute is bf16, via
+  autocast.
 - Image splitting turns one image into up to 17 tiles, so memory varies wildly
   between equally sized batches; `BatchGenerator` halves the batch on OOM
   instead of forcing a worst-case batch size.

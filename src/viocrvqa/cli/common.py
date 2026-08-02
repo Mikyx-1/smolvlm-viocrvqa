@@ -8,7 +8,10 @@ def add_model_args(ap, device="cuda:0", dtype=None):
     ap.add_argument("--model", default=DEFAULT_MODEL)
     ap.add_argument("--device", default=device, help="auto | cpu | cuda:N")
     if dtype:
-        ap.add_argument("--dtype", default=dtype, choices=["auto", "bfloat16", "float16", "float32"])
+        ap.add_argument("--dtype", default=dtype,
+                        choices=["auto", "bfloat16", "float16", "float32"],
+                        help="auto follows the checkpoint's config; forcing bfloat16 "
+                             "on a fine-tune rounds most of its weight delta away")
     ap.add_argument("--no-image-splitting", action="store_true",
                     help="1 tile instead of up to 17; much faster, less readable text")
     return ap
