@@ -43,7 +43,9 @@ def build_parser():
     ap.add_argument("-n", "--max-new-tokens", type=int, default=256)
     ap.add_argument("--device", default="auto", help="auto | cpu | cuda:N")
     ap.add_argument("--dtype", default="auto",
-                    choices=["auto", "bfloat16", "float16", "float32"])
+                    choices=["auto", "bfloat16", "float16", "float32"],
+                    help="auto follows the checkpoint's config; forcing bfloat16 "
+                         "on a fine-tune rounds most of its weight delta away")
     ap.add_argument("--temperature", type=float, default=0.0, help="0 = greedy decoding")
     return ap
 

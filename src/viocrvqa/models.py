@@ -4,7 +4,7 @@ import contextlib
 from pathlib import Path
 
 import torch
-from transformers import AutoModelForImageTextToText, AutoProcessor
+from transformers import AutoModelForImageTextToText, AutoProcessor, PretrainedConfig
 
 from .config import DEFAULT_MODEL
 from .data.prompts import PromptFormatter
@@ -33,11 +33,34 @@ def resolve_device(requested="auto"):
     return f"cuda:{idx}"
 
 
-def resolve_dtype(name="auto", device="cuda:0"):
-    """Map a dtype name to a torch dtype; 'auto' means bf16 on GPU, fp32 on CPU."""
-    if name == "auto":
-        return torch.float32 if str(device).startswith("cpu") else torch.bfloat16
-    return DTYPES[name]
+def checkpoint_dtype(model_id):
+    """The dtype a checkpoint records in its config, or None if it records none."""
+    try:
+        config, _ = PretrainedConfig.get_config_dict(model_id)
+    except OSError:
+        return None
+    # transformers renamed the field; older checkpoints still carry torch_dtype
+    return DTYPES.get(config.get("dtype") or config.get("torch_dtype"))
+
+
+def resolve_dtype(name="auto", device="cuda:0", model_id=None):
+    """Map a dtype name to a torch dtype; 'auto' follows the checkpoint.
+
+    A fine-tune saved in fp32 must be *loaded* in fp32. At lr=1e-5 the learned
+    per-weight delta is 2.5e-4, the same order as one bf16 step at the median
+    weight magnitude (2.4e-4 at |w| = 0.037), so casting to bf16 rounds the
+    delta away entirely for 41% of the model -- the checkpoint reproduces 55%
+    of its own training answers instead of 98%. The pretrained model records
+    bfloat16 and is unaffected, so honouring the config gets both right.
+
+    Falls back to bf16 on GPU and fp32 on CPU when nothing is recorded.
+    """
+    if name != "auto":
+        return DTYPES[name]
+    recorded = checkpoint_dtype(model_id) if model_id else None
+    if recorded is not None:
+        return recorded
+    return torch.float32 if str(device).startswith("cpu") else torch.bfloat16
 
 
 class ModelBundle:
@@ -65,7 +88,7 @@ class ModelBundle:
 
         model = AutoModelForImageTextToText.from_pretrained(
             model_id,
-            dtype=resolve_dtype(dtype, device),
+            dtype=resolve_dtype(dtype, device, model_id),
             # flash_attention_2 is faster but not installed here; sdpa works everywhere
             attn_implementation="sdpa",
         ).to(device)
@@ -96,7 +119,12 @@ class ModelBundle:
     @classmethod
     def for_inference(cls, model_id=DEFAULT_MODEL, device="cuda:0", dtype="auto",
                       image_splitting=True):
-        """Load left-padded (required for batched generation) and in eval mode."""
+        """Load left-padded (required for batched generation) and in eval mode.
+
+        The default dtype follows the checkpoint: bf16 for the pretrained
+        model, fp32 for a fine-tune, because bf16 rounds most of a fine-tune's
+        weight delta away. See resolve_dtype.
+        """
         return cls.load(model_id, device=device, dtype=dtype, padding_side="left",
                         image_splitting=image_splitting, training=False)
 
