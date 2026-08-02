@@ -1,5 +1,6 @@
 """The supervised fine-tuning loop."""
 
+import contextlib
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,11 +20,12 @@ class TrainingConfig:
     """Hyper-parameters and schedule of one fine-tuning run."""
 
     epochs: int = 50
-    batch_size: int = 4
-    grad_accum_steps: int = 4
+    batch_size: int = 2  # fp32 master weights leave less room for activations
+    grad_accum_steps: int = 8  # batch_size * grad_accum_steps = 16 as before
     lr: float = 1e-5
     warmup_ratio: float = 0.03
     max_grad_norm: float = 1.0
+    amp: bool = True  # bf16 autocast over fp32 weights; see ModelBundle.for_training
     eval_every: int = 1  # evaluate on dev every N epochs; 0 disables
     output_dir: Path = CHECKPOINT_DIR
 
@@ -71,7 +73,8 @@ class Trainer:
         """One pass over the loader, stepping every grad_accum_steps batches."""
         running_loss = 0.0
         for i, batch in enumerate(self.loader):
-            loss = self.bundle.model(**batch).loss / self.config.grad_accum_steps
+            with self.autocast():
+                loss = self.bundle.model(**batch).loss / self.config.grad_accum_steps
             loss.backward()
             running_loss += loss.item()
 
@@ -79,6 +82,16 @@ class Trainer:
                 self.optimizer_step()
                 self.log_step(epoch, running_loss)
                 running_loss = 0.0
+
+    def autocast(self):
+        """bf16 compute over the fp32 master weights that AdamW actually updates.
+
+        No GradScaler: bf16 has fp32's exponent range, so gradients do not
+        underflow the way fp16 ones do.
+        """
+        if not self.config.amp or not str(self.bundle.device).startswith("cuda"):
+            return contextlib.nullcontext()
+        return torch.autocast("cuda", dtype=torch.bfloat16)
 
     def optimizer_step(self):
         """Clip gradients, step the optimizer and LR schedule, then zero grads."""

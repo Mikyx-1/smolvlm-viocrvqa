@@ -31,11 +31,19 @@ def build_parser():
     ap.add_argument("--output-dir", default=None,
                     help="where to save checkpoints (default: checkpoints/<model-name>)")
     ap.add_argument("--epochs", type=int, default=50)
-    ap.add_argument("--batch-size", type=int, default=4)
-    ap.add_argument("--grad-accum-steps", type=int, default=4)
+    ap.add_argument("--batch-size", type=int, default=2,
+                    help="fp32 master weights leave less room for activations")
+    ap.add_argument("--grad-accum-steps", type=int, default=8,
+                    help="effective batch = --batch-size * --grad-accum-steps")
     ap.add_argument("--lr", type=float, default=1e-5)
     ap.add_argument("--warmup-ratio", type=float, default=0.03)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--train-dtype", default="float32",
+                    choices=["float32", "bfloat16"],
+                    help="master weight dtype; bfloat16 rounds away ~92%% of "
+                         "the updates at lr=1e-5 and will stall training")
+    ap.add_argument("--no-amp", action="store_true",
+                    help="disable bf16 autocast (slower, more activation memory)")
     ap.add_argument("--no-grad-checkpointing", action="store_true",
                     help="disable gradient checkpointing (uses much more VRAM: "
                          "each image splits into up to 17 tiles)")
@@ -44,7 +52,7 @@ def build_parser():
                     help="evaluate on dev every N epochs; 0 disables")
     ap.add_argument("--eval-limit", type=int, default=200,
                     help="cap dev samples used for periodic eval; 0 = all")
-    ap.add_argument("--eval-batch-size", type=int, default=16)
+    ap.add_argument("--eval-batch-size", type=int, default=8)
     ap.add_argument("--max-new-tokens", type=int, default=DEFAULT_MAX_NEW_TOKENS,
                     help="for periodic dev-set eval")
 
@@ -78,7 +86,7 @@ def main():
           f"(data_dir={args.data_dir})")
 
     bundle = ModelBundle.for_training(
-        args.model, device=args.device,
+        args.model, device=args.device, dtype=args.train_dtype,
         image_splitting=not args.no_image_splitting,
         gradient_checkpointing=not args.no_grad_checkpointing,
     )
@@ -94,6 +102,7 @@ def main():
         grad_accum_steps=args.grad_accum_steps,
         lr=args.lr,
         warmup_ratio=args.warmup_ratio,
+        amp=not args.no_amp,
         eval_every=args.eval_every,
         output_dir=args.output_dir or CHECKPOINT_DIR / args.model.split("/")[-1],
     )
