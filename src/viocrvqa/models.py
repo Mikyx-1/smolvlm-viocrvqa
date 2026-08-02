@@ -151,6 +151,24 @@ class ModelBundle:
         return path
 
     @contextlib.contextmanager
+    def teacher_forcing_mode(self):
+        """Switch to the layout the label mask assumes, then restore it.
+
+        VQACollator lines labels up against right-padded sequences, so scoring
+        likelihood needs the training layout even on a bundle that was loaded
+        for generation. The mirror image of generation_mode().
+        """
+        padding_side_before = self.processor.tokenizer.padding_side
+        was_training = self.model.training
+        self.model.eval()
+        self.processor.tokenizer.padding_side = "right"
+        try:
+            yield self
+        finally:
+            self.processor.tokenizer.padding_side = padding_side_before
+            self.model.train(was_training)
+
+    @contextlib.contextmanager
     def generation_mode(self):
         """Switch to inference settings for the block, then restore them.
 

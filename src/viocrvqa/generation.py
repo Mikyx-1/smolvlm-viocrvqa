@@ -18,6 +18,9 @@ class BatchGenerator:
         self.bundle = bundle
         self.max_new_tokens = max_new_tokens
         self.temperature = temperature
+        # an empty prediction scores 0 and looks like a model failure, so the
+        # caller needs to be able to tell how many were really OOM casualties
+        self.oom_empties = 0
 
     def generate(self, images, texts):
         """Return one decoded string per prompt, recursively splitting on OOM."""
@@ -26,6 +29,7 @@ class BatchGenerator:
         except torch.OutOfMemoryError:
             torch.cuda.empty_cache()
             if len(texts) == 1:
+                self.oom_empties += 1
                 print("  OOM on a single sample; emitting empty prediction", flush=True)
                 return [""]
             mid = len(texts) // 2

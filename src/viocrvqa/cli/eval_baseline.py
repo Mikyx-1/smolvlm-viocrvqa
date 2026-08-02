@@ -9,13 +9,15 @@ Examples:
     python -m viocrvqa.cli.eval_baseline --blank-image              # memorisation floor
     python -m viocrvqa.cli.eval_baseline --shard 0 --num-shards 3   # one GPU per shard
     python -m viocrvqa.cli.eval_baseline --model checkpoints/SmolVLM-256M-Instruct/epoch3
+    python -m viocrvqa.cli.eval_baseline --loss                     # + loss/perplexity
 """
 
 import argparse
 
 from ..config import DEFAULT_MAX_NEW_TOKENS, RESULTS_DIR
 from ..data.corpus import VQACorpus
-from ..evaluation import EvalConfig, Evaluator, ProgressPrinter
+from ..evaluation import (EvalConfig, Evaluator, LossEvaluator,
+                          LossProgressPrinter, ProgressPrinter)
 from ..models import ModelBundle
 from ..reporting import Report
 from .common import add_data_args, add_model_args
@@ -34,8 +36,24 @@ def build_parser():
     ap.add_argument("--num-shards", type=int, default=1)
     ap.add_argument("--blank-image", action="store_true",
                     help="feed a grey image; measures how much is answerable without reading")
+    ap.add_argument("--loss", action="store_true",
+                    help="also report teacher-forced loss, perplexity and token "
+                         "accuracy, comparable to the loss printed while training")
+    ap.add_argument("--loss-batch-size", type=int, default=2,
+                    help="batch size for the loss pass (no KV cache, so keep it small)")
     ap.add_argument("--out", default=None, help="where to write the records JSON")
     return ap
+
+
+def print_loss(stats):
+    """The teacher-forced block, printed under the generation metrics."""
+    print("\n" + "=" * 66)
+    print(f"TEACHER-FORCED  n={stats['n']}  ({stats['answer_tokens']} answer tokens)")
+    print(f"  loss            {stats['loss']:8.4f} nats/token")
+    print(f"  perplexity      {stats['perplexity']:8.4f}")
+    print(f"  token accuracy  {stats['token_accuracy']:7.2f}%   next-token argmax")
+    print(f"  answer accuracy {stats['answer_accuracy']:7.2f}%   every token of the answer")
+    print("=" * 66)
 
 
 def output_path(args):
@@ -72,7 +90,17 @@ def main():
 
     path = report.save(output_path(args))
     report.print()
+    if evaluator.generator.oom_empties:
+        print(f"\nWARNING: {evaluator.generator.oom_empties} predictions are empty "
+              f"because generation ran out of memory, and each scores 0. "
+              f"Lower --batch-size and re-run before trusting these numbers.")
     print(f"\nwrote {path}")
+
+    if args.loss:
+        loss_evaluator = LossEvaluator(
+            bundle, corpus, bundle.formatter(args.prompt),
+            batch_size=args.loss_batch_size, blank_image=args.blank_image)
+        print_loss(loss_evaluator.evaluate(samples, on_batch=LossProgressPrinter()))
 
 
 if __name__ == "__main__":
