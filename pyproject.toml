@@ -24,6 +24,10 @@ viocrvqa-infer = "viocrvqa.cli.infer:main"
 viocrvqa-merge-reports = "viocrvqa.cli.merge_reports:main"
 viocrvqa-download-data = "viocrvqa.cli.download_data:main"
 viocrvqa-split-data = "viocrvqa.cli.split_data:main"
+viocrvqa-label-fields = "viocrvqa.cli.label_fields:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"viocrvqa.data" = ["field_labels.json"]
