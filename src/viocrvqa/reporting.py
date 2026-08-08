@@ -57,6 +57,31 @@ class Report:
         """Metrics without `n`, ready to hand to a tracker."""
         return {f"{prefix}{k}": v for k, v in self.metrics.items() if k != "n"}
 
+    def field_scalars(self, prefix=""):
+        """Per-field nEM and F1, ready to hand to a tracker.
+
+        The corpus-level scalars hide the thing the paper's table is about:
+        the five fields improve at different rates, and a flat average can
+        stay put while one field collapses and another carries it.
+
+        Keyed `<prefix>nem/<field>` and `<prefix>f1/<field>` so a tracker
+        that groups panels by key prefix puts all five fields of one metric
+        on the same chart. Empty fields are omitted rather than logged as 0,
+        which would read as a real score of zero.
+        """
+        groups = [(name, self.for_field(name)) for name in FIELDS]
+        # the paper's headline average, which excludes genre; see print_by_field
+        groups.append(("average_4", self.subset(lambda r: _field(r) in MAIN_FIELDS)))
+
+        out = {}
+        for label, group in groups:
+            if not len(group):
+                continue
+            a = group.metrics
+            out[f"{prefix}nem/{label}"] = a["normalized_em"]
+            out[f"{prefix}f1/{label}"] = a["token_f1"]
+        return out
+
     def save(self, path):
         """Write the raw records as JSON, creating the parent directory."""
         path = Path(path)
