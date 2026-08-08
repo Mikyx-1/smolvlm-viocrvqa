@@ -118,7 +118,8 @@ class Trainer:
         print(f"\n--- dev eval after epoch {epoch} ---")
         report = Report(self.evaluator.evaluate(self.dev_samples))
         report.print()
-        self.tracker.log(report.scalars(prefix="dev/"), step=self.step)
+        self.tracker.log({**report.scalars(prefix="dev/"),
+                          **report.field_scalars(prefix="dev/")}, step=self.step)
         return report
 
     def save_checkpoint(self, epoch):
