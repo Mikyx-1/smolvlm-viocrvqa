@@ -2,7 +2,7 @@
 
 Layout:
     config      paths, model/prompt defaults
-    metrics     string metrics (EM, nEM, token F1, CER) and question intents
+    metrics     string metrics (EM, nEM, token F1, CER)
     data/       corpus loading, prompt formatting, torch Dataset + collator
     models      ModelBundle: loading, device/dtype, save, generation mode
     generation  BatchGenerator: batched greedy decoding with OOM back-off

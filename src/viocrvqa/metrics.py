@@ -63,24 +63,8 @@ def cer(pred: str, gold: str) -> float:
     return min(edit_distance(p, g) / len(g), 1.0)
 
 
-INTENT_PATTERNS = [
-    ("genre", r"thể loại|loại sách|rơi vào loại"),
-    ("author", r"ai (đã )?(viết|sáng tác|sáng tạo|sáng lập|phát triển|là tác giả)|tác giả"),
-    ("publisher", r"nhà xuất bản|xuất bản|nxb|nhà in|công ty nào"),
-    ("title", r"tựa đề|tiêu đề|tên|gọi là gì|đặt tên"),
-]
-
-
-def intent(question: str) -> str:
-    q = question.lower()
-    for name, pat in INTENT_PATTERNS:
-        if re.search(pat, q):
-            return name
-    return "other"
-
-
 def aggregate(records):
-    """records: list of dicts with keys pred, gold, question, seen."""
+    """records: list of dicts with keys pred, gold, question, field, seen."""
     if not records:
         return {}
     n = len(records)

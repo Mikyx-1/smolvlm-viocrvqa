@@ -10,9 +10,10 @@ the image, question and template tokens are masked out.
 ```
 src/viocrvqa/
   config.py        paths, model defaults, named prompt templates
-  metrics.py       EM / normalized EM / token F1 / CER, question intents
+  metrics.py       EM / normalized EM / token F1 / CER
   data/
     corpus.py      VQACorpus       — splits, images, train answer vocabulary
+    fields.py      the paper's five question fields, per question template
     prompts.py     PromptFormatter — chat templating, answer token length
     dataset.py     VQADataset, VQACollator — batching + answer-only labels
   models.py        ModelBundle     — load/save, device & dtype, generation mode
@@ -53,6 +54,9 @@ python -m viocrvqa.cli.eval_baseline --blank-image             # memorisation fl
 python -m viocrvqa.cli.eval_baseline --shard 0 --num-shards 3  # one GPU per shard
 python -m viocrvqa.cli.eval_baseline --model checkpoints/SmolVLM-256M-Instruct/epoch3
 python -m viocrvqa.cli.merge_reports 'results/baseline_dev_image_shard*.json'
+
+# recover the paper's five question fields (already checked in; --check vs Table 3)
+python -m viocrvqa.cli.label_fields --check
 
 # read predictions, compare prompt templates
 python -m viocrvqa.cli.sample --by-image 4
@@ -101,3 +105,16 @@ Report(evaluator.evaluate(corpus.load("dev", limit=200))).print()
   instead of forcing a worst-case batch size.
 - Vietnamese needs Unicode normalisation before comparison — the same word can
   be stored composed or decomposed and compares unequal as a raw string.
+- The paper reports EM and F1 per question field (title, author, publisher,
+  translator, genre), but the release carries no field labels. The field is a
+  property of the question template, not of its wording, so it is recovered
+  rather than guessed: a book is asked exactly one template per field, so two
+  templates of the same field never share an image while templates of different
+  fields co-occur constantly. Grouping the 240 templates on that signature
+  yields exactly five clusters matching Table 3's proportions to within 0.1
+  points. `cli/label_fields.py --check` reproduces the mapping and the
+  comparison; `data/field_labels.json` is the result the report reads.
+- The paper's headline table (8) omits genre and reports it separately (9), so
+  the report prints the average over the four main fields as well as over all
+  five. Its numbers are on `test`, which is unlabelled here, so `dev` is the
+  closest comparable split — same size and construction, different books.

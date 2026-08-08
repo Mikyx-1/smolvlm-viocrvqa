@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader
 from . import metrics as M
 from .config import DEFAULT_MAX_NEW_TOKENS
 from .data.dataset import VQACollator, VQADataset
+from .data.fields import field
 from .generation import BatchGenerator
 
 
@@ -78,7 +79,7 @@ class Evaluator:
         gold = sample["gold"]
         return {
             "image": sample["image"], "question": sample["question"], "gold": gold, "pred": p,
-            "intent": M.intent(sample["question"]),
+            "field": field(sample["question"]),
             "seen": M.normalize(gold) in self.seen_vocab,
             "em": M.exact_match(p, gold),
             "nem": M.normalized_em(p, gold),
